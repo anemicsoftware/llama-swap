@@ -29,26 +29,49 @@ func detectAMD(ctx context.Context) []detectedAccelerator {
 	return result
 }
 
+// rocmSMIFallbackPaths are where ROCm installs rocm-smi. Services often run
+// with a PATH that omits /opt/rocm/bin, so PATH alone is not enough.
+var rocmSMIFallbackPaths = []string{"/opt/rocm/bin/rocm-smi", "/usr/bin/rocm-smi", "/usr/local/bin/rocm-smi"}
+
+// lookPath resolves executables; a variable so tests can stub it.
+var lookPath = exec.LookPath
+
+// findROCmSMI returns the path of rocm-smi, searching PATH first and then the
+// usual ROCm install locations.
+func findROCmSMI() (string, error) {
+	path, err := lookPath("rocm-smi")
+	if err == nil {
+		return path, nil
+	}
+	for _, candidate := range rocmSMIFallbackPaths {
+		if info, statErr := os.Stat(candidate); statErr == nil && !info.IsDir() && info.Mode()&0o111 != 0 {
+			return candidate, nil
+		}
+	}
+	return "", err
+}
+
 func detectROCm(ctx context.Context) ([]detectedAccelerator, error) {
-	if _, err := exec.LookPath("rocm-smi"); err != nil {
+	rocmSmi, err := findROCmSMI()
+	if err != nil {
 		return nil, err
 	}
 	// Query each fact separately. Some rocm-smi builds exit successfully but
 	// print only a driver row when several --show flags are combined, and one
 	// unsupported flag must not discard the device listing.
-	output, err := exec.CommandContext(ctx, "rocm-smi", "-i", "--showmeminfo", "vram", "--showproductname", "--showbus", "--csv").Output()
+	output, err := exec.CommandContext(ctx, rocmSmi, "-i", "--showmeminfo", "vram", "--showproductname", "--showbus", "--csv").Output()
 	if err != nil {
 		return nil, fmt.Errorf("querying rocm-smi: %w", err)
 	}
 	outputs := []string{string(output)}
-	if power, err := exec.CommandContext(ctx, "rocm-smi", "--showmaxpower", "--csv").Output(); err == nil {
+	if power, err := exec.CommandContext(ctx, rocmSmi, "--showmaxpower", "--csv").Output(); err == nil {
 		outputs = append(outputs, string(power))
 	}
 	result, err := parseROCmCSV(outputs...)
 	if err != nil {
 		return nil, err
 	}
-	if driver, err := exec.CommandContext(ctx, "rocm-smi", "--showdriverversion", "--csv").Output(); err == nil {
+	if driver, err := exec.CommandContext(ctx, rocmSmi, "--showdriverversion", "--csv").Output(); err == nil {
 		if version := parseROCmDriverVersion(string(driver)); version != "" {
 			for i := range result {
 				result[i].value.Driver = &Driver{Name: stringPtr("amdgpu"), Version: stringPtr(version)}

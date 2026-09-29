@@ -18,9 +18,6 @@ var commandRunner = func(ctx context.Context, name string, args ...string) ([]by
 	return exec.CommandContext(ctx, name, args...).CombinedOutput()
 }
 
-// lookPath resolves executables; a variable so tests can stub it.
-var lookPath = exec.LookPath
-
 // pciDevicesRoot is the sysfs directory of PCI devices.
 var pciDevicesRoot = "/sys/bus/pci/devices"
 
@@ -29,14 +26,15 @@ var pciDevicesRoot = "/sys/bus/pci/devices"
 // reading the cap back from sysfs because rocm-smi can exit successfully
 // without applying the value.
 func setAMDPowerLimit(ctx context.Context, pciAddress string, watts int) (float64, error) {
-	index, err := rocmDeviceIndex(ctx, pciAddress)
-	if err != nil {
-		return 0, err
-	}
-	// sudo's secure_path usually omits /opt/rocm/bin, so pass an absolute path.
-	rocmSmi, err := lookPath("rocm-smi")
+	// sudo's secure_path and a service's PATH usually omit /opt/rocm/bin, so
+	// use an absolute path everywhere.
+	rocmSmi, err := findROCmSMI()
 	if err != nil {
 		return 0, fmt.Errorf("rocm-smi not found: %w", err)
+	}
+	index, err := rocmDeviceIndex(ctx, rocmSmi, pciAddress)
+	if err != nil {
+		return 0, err
 	}
 	output, err := commandRunner(ctx, "sudo", "-n", rocmSmi,
 		"-d", strconv.Itoa(index), "--setpoweroverdrive", strconv.Itoa(watts), "--autorespond", "yes")
@@ -54,8 +52,8 @@ func setAMDPowerLimit(ctx context.Context, pciAddress string, watts int) (float6
 }
 
 // rocmDeviceIndex maps a PCI address to rocm-smi's device number.
-func rocmDeviceIndex(ctx context.Context, pciAddress string) (int, error) {
-	output, err := commandRunner(ctx, "rocm-smi", "--showbus", "--csv")
+func rocmDeviceIndex(ctx context.Context, rocmSmi, pciAddress string) (int, error) {
+	output, err := commandRunner(ctx, rocmSmi, "--showbus", "--csv")
 	if err != nil {
 		return 0, fmt.Errorf("querying rocm-smi: %w", err)
 	}

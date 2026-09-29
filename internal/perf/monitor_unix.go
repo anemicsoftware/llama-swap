@@ -185,7 +185,8 @@ func tryNvidiaSmi(ctx context.Context, every time.Duration, logger *logmon.Monit
 }
 
 func tryRocmSmi(ctx context.Context, every time.Duration, logger *logmon.Monitor) (chan []GpuStat, error) {
-	if _, err := exec.LookPath("rocm-smi"); err != nil {
+	rocmSmi, err := findROCmSMI()
+	if err != nil {
 		return nil, ErrNoGpuTool
 	}
 	if every < time.Second {
@@ -206,7 +207,7 @@ func tryRocmSmi(ctx context.Context, every time.Duration, logger *logmon.Monitor
 				return
 			case <-ticker.C:
 				pollCtx, cancel := context.WithTimeout(ctx, pollTimeout)
-				cmd := exec.CommandContext(pollCtx, "rocm-smi", "-i", "-P", "-t", "-f", "-u", "--showmemuse", "--showmeminfo", "vram", "--showproductname", "--csv")
+				cmd := exec.CommandContext(pollCtx, rocmSmi, "-i", "-P", "-t", "-f", "-u", "--showmemuse", "--showmeminfo", "vram", "--showproductname", "--csv")
 				out, err := cmd.Output()
 				timedOut := pollCtx.Err() == context.DeadlineExceeded
 				cancel()
@@ -583,4 +584,19 @@ func readSysStats() (SysStat, error) {
 		LoadAvg15:      loadAvg15,
 		NetIO:          netIO,
 	}, nil
+}
+
+// findROCmSMI returns rocm-smi from PATH or, since services often run without
+// /opt/rocm/bin on PATH, from the usual ROCm install locations.
+func findROCmSMI() (string, error) {
+	path, err := exec.LookPath("rocm-smi")
+	if err == nil {
+		return path, nil
+	}
+	for _, candidate := range []string{"/opt/rocm/bin/rocm-smi", "/usr/bin/rocm-smi", "/usr/local/bin/rocm-smi"} {
+		if info, statErr := os.Stat(candidate); statErr == nil && !info.IsDir() && info.Mode()&0o111 != 0 {
+			return candidate, nil
+		}
+	}
+	return "", err
 }

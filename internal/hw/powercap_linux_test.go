@@ -34,7 +34,7 @@ func fakePowerCapEnv(t *testing.T, applyWatts int) (calls *[][]string) {
 	var recorded [][]string
 	commandRunner = func(_ context.Context, name string, args ...string) ([]byte, error) {
 		recorded = append(recorded, append([]string{name}, args...))
-		if name == "rocm-smi" {
+		if filepath.Base(name) == "rocm-smi" {
 			return []byte("device,PCI Bus\ncard0,0000:c3:00.0\ncard2,0000:83:00.0\n"), nil
 		}
 		if applyWatts >= 0 {
@@ -106,5 +106,25 @@ func TestHardware_SetPowerLimitUnsupported(t *testing.T) {
 	snapshot.Accelerators[0].Vendor = stringPtr("NVIDIA")
 	if _, err := snapshot.SetPowerLimit(context.Background(), 0, 150); !errors.Is(err, ErrPowerLimitUnsupported) {
 		t.Fatalf("SetPowerLimit() error = %v, want ErrPowerLimitUnsupported", err)
+	}
+}
+
+func TestHardware_FindROCmSMIFallsBackWhenNotOnPath(t *testing.T) {
+	dir := t.TempDir()
+	fake := filepath.Join(dir, "rocm-smi")
+	if err := os.WriteFile(fake, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	oldLookPath, oldPaths := lookPath, rocmSMIFallbackPaths
+	t.Cleanup(func() { lookPath, rocmSMIFallbackPaths = oldLookPath, oldPaths })
+	lookPath = func(string) (string, error) { return "", errors.New("not on PATH") }
+
+	rocmSMIFallbackPaths = []string{filepath.Join(dir, "missing"), fake}
+	if got, err := findROCmSMI(); err != nil || got != fake {
+		t.Fatalf("findROCmSMI() = %q, %v, want %q", got, err, fake)
+	}
+	rocmSMIFallbackPaths = []string{filepath.Join(dir, "missing")}
+	if _, err := findROCmSMI(); err == nil {
+		t.Fatal("findROCmSMI() succeeded with no rocm-smi anywhere")
 	}
 }
