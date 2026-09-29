@@ -287,6 +287,19 @@
             "default": {},
             "description": "Configuration for CPU, RAM and GPU monitoring statistics."
         },
+        "hardware": {
+            "type": "object",
+            "properties": {
+                "allowPowerCap": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Allow changing GPU power limits from the Hardware page and API. Runs 'sudo -n rocm-smi --setpoweroverdrive', so passwordless sudo for rocm-smi is required. AMD GPUs only."
+                }
+            },
+            "additionalProperties": false,
+            "default": {},
+            "description": "Hardware page settings."
+        },
         "startPort": {
             "type": "integer",
             "default": 5800,

@@ -88,6 +88,15 @@ performance:
   # - minimum duration 5s
   every: 15s
 
+# hardware: settings for the Hardware page
+hardware:
+  # allowPowerCap: let the Hardware page and API change GPU power limits
+  # - default: false
+  # - AMD GPUs only, runs `sudo -n rocm-smi -d N --setpoweroverdrive W`
+  # - requires passwordless sudo for rocm-smi
+  # - anyone who can reach the API can change power limits; set apiKeys
+  allowPowerCap: false
+
 # startPort: sets the starting port number for the automatic ${PORT} macro.
 # - optional, default: 5800
 # - the ${PORT} macro can be used in model.cmd and model.proxy settings

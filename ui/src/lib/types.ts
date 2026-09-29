@@ -224,6 +224,8 @@ export interface HardwareSnapshot {
   cpu: HardwareCPU;
   memory: HardwareMemory;
   accelerators: HardwareAccelerator[];
+  /** What this server lets clients change; absent on older servers. */
+  controls?: { power_cap: boolean };
 }
 
 export interface HardwareSystem {
@@ -283,6 +285,8 @@ export interface HardwareAccelerator {
   };
   driver: { name: string | null; version: string | null } | null;
   power_limit_watts: number | null;
+  power_limit_min_watts?: number | null;
+  power_limit_max_watts?: number | null;
   nominal_power_watts: number | null;
 }
 

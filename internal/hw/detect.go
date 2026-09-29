@@ -164,6 +164,7 @@ func finalizeAccelerators(found []detectedAccelerator) []Accelerator {
 	for i := range merged {
 		result[i] = merged[i].value
 		result[i].Index = i
+		result[i].pciAddress = pciAddressOf(merged[i].identity)
 	}
 	return result
 }
@@ -196,6 +197,12 @@ func mergeAccelerator(dst *Accelerator, src Accelerator) {
 	}
 	if dst.PowerLimitWatts == nil {
 		dst.PowerLimitWatts = src.PowerLimitWatts
+	}
+	if dst.PowerLimitMinWatts == nil {
+		dst.PowerLimitMinWatts = src.PowerLimitMinWatts
+	}
+	if dst.PowerLimitMaxWatts == nil {
+		dst.PowerLimitMaxWatts = src.PowerLimitMaxWatts
 	}
 }
 

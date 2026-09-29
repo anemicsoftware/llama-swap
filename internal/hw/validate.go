@@ -69,6 +69,9 @@ func (s HardwareSnapshot) Validate() error {
 		if accelerator.PowerLimitWatts != nil && (*accelerator.PowerLimitWatts <= 0 || math.IsNaN(*accelerator.PowerLimitWatts) || math.IsInf(*accelerator.PowerLimitWatts, 0)) {
 			return fmt.Errorf("%s.power_limit_watts must be positive and finite", path)
 		}
+		if err := validatePowerLimitRange(path, accelerator); err != nil {
+			return err
+		}
 		if accelerator.NominalPowerWatts != nil && (*accelerator.NominalPowerWatts <= 0 || math.IsNaN(*accelerator.NominalPowerWatts) || math.IsInf(*accelerator.NominalPowerWatts, 0)) {
 			return fmt.Errorf("%s.nominal_power_watts must be positive and finite", path)
 		}
@@ -89,6 +92,21 @@ func validateNamedValue(path, value string, raw *string, allowed ...string) erro
 	}
 	if value == "other" && (raw == nil || strings.TrimSpace(*raw) == "") {
 		return fmt.Errorf("%s raw value is required for other", path)
+	}
+	return nil
+}
+
+func validatePowerLimitRange(path string, accelerator Accelerator) error {
+	for name, value := range map[string]*float64{
+		"power_limit_min_watts": accelerator.PowerLimitMinWatts,
+		"power_limit_max_watts": accelerator.PowerLimitMaxWatts,
+	} {
+		if value != nil && (*value <= 0 || math.IsNaN(*value) || math.IsInf(*value, 0)) {
+			return fmt.Errorf("%s.%s must be positive and finite", path, name)
+		}
+	}
+	if min, max := accelerator.PowerLimitMinWatts, accelerator.PowerLimitMaxWatts; min != nil && max != nil && *min > *max {
+		return fmt.Errorf("%s.power_limit_min_watts must not exceed power_limit_max_watts", path)
 	}
 	return nil
 }

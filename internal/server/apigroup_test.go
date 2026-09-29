@@ -357,6 +357,60 @@ func TestServer_APIHardwareUnavailable(t *testing.T) {
 	}
 }
 
+func TestServer_APISetPowerLimit(t *testing.T) {
+	put := func(s *Server, path, body string) *httptest.ResponseRecorder {
+		w := httptest.NewRecorder()
+		s.ServeHTTP(w, httptest.NewRequest(http.MethodPut, path, strings.NewReader(body)))
+		return w
+	}
+	const path = "/api/hardware/accelerators/0/power-limit"
+
+	t.Run("forbidden unless enabled", func(t *testing.T) {
+		s := newTestServer(newStubRouter(nil, ""), newStubRouter(nil, ""))
+		s.hardware = &hw.HardwareSnapshot{Accelerators: []hw.Accelerator{{}}}
+		if w := put(s, path, `{"watts": 100}`); w.Code != http.StatusForbidden {
+			t.Fatalf("status = %d, want %d", w.Code, http.StatusForbidden)
+		}
+	})
+
+	t.Run("rejects unsupported accelerator", func(t *testing.T) {
+		s := newTestServer(newStubRouter(nil, ""), newStubRouter(nil, ""))
+		s.cfg.Hardware.AllowPowerCap = true
+		s.hardware = &hw.HardwareSnapshot{Accelerators: []hw.Accelerator{{Kind: "gpu"}}}
+		if w := put(s, path, `{"watts": 100}`); w.Code != http.StatusConflict {
+			t.Fatalf("status = %d, want %d", w.Code, http.StatusConflict)
+		}
+	})
+
+	t.Run("rejects bad requests", func(t *testing.T) {
+		s := newTestServer(newStubRouter(nil, ""), newStubRouter(nil, ""))
+		s.cfg.Hardware.AllowPowerCap = true
+		s.hardware = &hw.HardwareSnapshot{Accelerators: []hw.Accelerator{{}}}
+		if w := put(s, path, `not json`); w.Code != http.StatusBadRequest {
+			t.Errorf("bad body status = %d, want %d", w.Code, http.StatusBadRequest)
+		}
+		if w := put(s, "/api/hardware/accelerators/9/power-limit", `{"watts": 100}`); w.Code != http.StatusBadRequest {
+			t.Errorf("unknown index status = %d, want %d", w.Code, http.StatusBadRequest)
+		}
+	})
+
+	t.Run("controls reflect config", func(t *testing.T) {
+		s := newTestServer(newStubRouter(nil, ""), newStubRouter(nil, ""))
+		s.cfg.Hardware.AllowPowerCap = true
+		s.hardware = &hw.HardwareSnapshot{Accelerators: []hw.Accelerator{}}
+		w := httptest.NewRecorder()
+		s.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/hardware", nil))
+		var got struct {
+			Controls struct {
+				PowerCap bool `json:"power_cap"`
+			} `json:"controls"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil || !got.Controls.PowerCap {
+			t.Fatalf("controls = %+v, err = %v, body = %s", got, err, w.Body.String())
+		}
+	})
+}
+
 func TestServer_APIMetricsActivity_Empty(t *testing.T) {
 	s := newTestServer(newStubRouter(nil, ""), newStubRouter(nil, ""))
 

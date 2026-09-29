@@ -83,10 +83,19 @@ type Accelerator struct {
 	Memory          AcceleratorMemory `json:"memory"`
 	Driver          *Driver           `json:"driver"`
 	PowerLimitWatts *float64          `json:"power_limit_watts"`
+	// PowerLimitMinWatts and PowerLimitMaxWatts bound the values the driver
+	// accepts for PowerLimitWatts. They are nil when the platform does not
+	// expose an adjustable limit.
+	PowerLimitMinWatts *float64 `json:"power_limit_min_watts"`
+	PowerLimitMaxWatts *float64 `json:"power_limit_max_watts"`
 	// NominalPowerWatts is a vendor-documented nominal power figure for the
 	// accelerator or its SoC, reported when the platform exposes no power
 	// limit. It is a design figure, not an enforced limit.
 	NominalPowerWatts *float64 `json:"nominal_power_watts"`
+
+	// pciAddress is the normalized PCI address used to target the device
+	// when changing its power limit. Empty when unknown. Not serialized.
+	pciAddress string
 }
 
 type AcceleratorMemory struct {

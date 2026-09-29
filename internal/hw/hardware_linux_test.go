@@ -226,3 +226,58 @@ func TestHardware_ParseROCmCSV(t *testing.T) {
 		t.Fatalf("parseROCmCSV() = %+v", got)
 	}
 }
+
+func TestHardware_ParseROCmCSVMergesSeparateQueries(t *testing.T) {
+	info := "device,Device Name,GUID,PCI Bus,VRAM Total Memory (B),Card Series,GFX Version\n" +
+		"card0,AMD Instinct MI60 / MI50,57756,0000:83:00.0,34342961152,AMD Instinct MI60 / MI50,gfx906\n" +
+		"card1,AMD Instinct MI60 / MI50,45663,0000:86:00.0,34342961152,AMD Instinct MI60 / MI50,gfx906\n"
+	power := "device,Max Graphics Package Power (W)\ncard0,100.0\ncard1,150.0\n"
+	got, err := parseROCmCSV(info, power)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("parseROCmCSV() returned %d accelerators, want 2", len(got))
+	}
+	if got[1].identity != "0000:86:00.0" || got[1].value.PowerLimitWatts == nil || *got[1].value.PowerLimitWatts != 150 {
+		t.Fatalf("second accelerator = %+v", got[1])
+	}
+	if got[0].value.Memory.CapacityBytes == nil || *got[0].value.Memory.CapacityBytes != 34342961152 {
+		t.Fatalf("first accelerator memory = %+v", got[0].value.Memory)
+	}
+}
+
+func TestHardware_ParseROCmDriverVersion(t *testing.T) {
+	for _, output := range []string{
+		"name, value\n\"Driver version\", \"6.19.12-1-cachyos\"\n",
+		"device,Driver version\nsystem,6.19.12-1-cachyos\n",
+	} {
+		if got := parseROCmDriverVersion(output); got != "6.19.12-1-cachyos" {
+			t.Fatalf("parseROCmDriverVersion(%q) = %q", output, got)
+		}
+	}
+}
+
+func TestHardware_EnrichAMDFromSysfs(t *testing.T) {
+	root := t.TempDir()
+	hwmon := filepath.Join(root, "hwmon", "hwmon3")
+	if err := os.MkdirAll(hwmon, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for path, value := range map[string]string{
+		filepath.Join(root, "product_name"):        "Radeon Instinct MI50 32GB\n",
+		filepath.Join(root, "mem_info_vram_total"): "34342961152\n",
+		filepath.Join(hwmon, "power1_cap"):         "100000000\n",
+	} {
+		if err := os.WriteFile(path, []byte(value), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	accelerator := Accelerator{Memory: AcceleratorMemory{Kind: "unknown"}}
+	enrichAMDFromSysfs(&accelerator, root)
+	if stringValue(accelerator.Model) != "Radeon Instinct MI50 32GB" ||
+		accelerator.Memory.Kind != "dedicated" || *accelerator.Memory.CapacityBytes != 34342961152 ||
+		accelerator.PowerLimitWatts == nil || *accelerator.PowerLimitWatts != 100 {
+		t.Fatalf("enrichAMDFromSysfs() = %+v", accelerator)
+	}
+}

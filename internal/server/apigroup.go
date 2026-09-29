@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"sort"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/mostlygeek/llama-swap/internal/config"
 	"github.com/mostlygeek/llama-swap/internal/event"
+	"github.com/mostlygeek/llama-swap/internal/hw"
 	"github.com/mostlygeek/llama-swap/internal/logmon"
 	"github.com/mostlygeek/llama-swap/internal/perf"
 	"github.com/mostlygeek/llama-swap/internal/process"
@@ -459,6 +461,17 @@ func (s *Server) tailcatExposedModelIDs() []string {
 	return ids
 }
 
+// hardwareResponse is the hardware snapshot plus what this server allows
+// clients to change.
+type hardwareResponse struct {
+	hw.HardwareSnapshot
+	Controls hardwareControls `json:"controls"`
+}
+
+type hardwareControls struct {
+	PowerCap bool `json:"power_cap"`
+}
+
 // handleAPIHardware serves the hardware snapshot captured at process startup.
 func (s *Server) handleAPIHardware(w http.ResponseWriter, r *http.Request) {
 	if s.hardware == nil {
@@ -466,9 +479,56 @@ func (s *Server) handleAPIHardware(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(s.hardware); err != nil {
+	resp := hardwareResponse{
+		HardwareSnapshot: s.hardware.Clone(),
+		Controls:         hardwareControls{PowerCap: s.cfg.Hardware.AllowPowerCap},
+	}
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
 		s.logs.ProxyLogs.Warnf("failed to encode hardware snapshot: %v", err)
 	}
+}
+
+// handleAPISetPowerLimit sets the power limit of one accelerator. It is
+// disabled unless hardware.allowPowerCap is set.
+func (s *Server) handleAPISetPowerLimit(w http.ResponseWriter, r *http.Request) {
+	if !s.cfg.Hardware.AllowPowerCap {
+		swaputil.SendResponse(w, r, http.StatusForbidden, "power limit changes are disabled; set hardware.allowPowerCap")
+		return
+	}
+	if s.hardware == nil {
+		swaputil.SendResponse(w, r, http.StatusServiceUnavailable, "hardware detection unavailable")
+		return
+	}
+	index, err := strconv.Atoi(r.PathValue("index"))
+	if err != nil {
+		swaputil.SendResponse(w, r, http.StatusBadRequest, "invalid accelerator index")
+		return
+	}
+	var body struct {
+		Watts float64 `json:"watts"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<10)).Decode(&body); err != nil {
+		swaputil.SendResponse(w, r, http.StatusBadRequest, "body must be JSON like {\"watts\": 150}")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	applied, err := s.hardware.SetPowerLimit(ctx, index, body.Watts)
+	switch {
+	case errors.Is(err, hw.ErrPowerLimitUnsupported):
+		swaputil.SendResponse(w, r, http.StatusConflict, err.Error())
+		return
+	case errors.Is(err, hw.ErrInvalidPowerLimit):
+		swaputil.SendResponse(w, r, http.StatusBadRequest, err.Error())
+		return
+	case err != nil:
+		s.logs.ProxyLogs.Warnf("setting power limit of accelerator %d failed: %v", index, err)
+		swaputil.SendResponse(w, r, http.StatusInternalServerError, err.Error())
+		return
+	}
+	s.logs.ProxyLogs.Infof("set power limit of accelerator %d to %g W", index, applied)
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{"index": index, "power_limit_watts": applied})
 }
 
 // handleAPICapture returns the stored request/response capture for a metric ID.

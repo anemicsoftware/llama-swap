@@ -497,3 +497,17 @@ export async function getHardware(): Promise<HardwareSnapshot> {
   }
   return await response.json() as HardwareSnapshot;
 }
+
+export async function setPowerLimit(index: number, watts: number): Promise<number> {
+  const response = await fetch(`/api/hardware/accelerators/${index}/power-limit`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ watts }),
+  });
+  if (!response.ok) {
+    const detail = (await response.text()).trim();
+    throw new Error(detail || `Failed to set power limit: ${response.status}`);
+  }
+  const result = (await response.json()) as { power_limit_watts: number };
+  return result.power_limit_watts;
+}

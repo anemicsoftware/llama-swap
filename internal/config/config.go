@@ -190,6 +190,7 @@ type Config struct {
 	Store              *Store            `yaml:"store"`
 	UI                 UIConfig          `yaml:"ui"`
 	Performance        PerformanceConfig `yaml:"performance"`
+	Hardware           HardwareConfig    `yaml:"hardware"`
 	GlobalTTL          int               `yaml:"globalTTL"`
 	UnloadTimeout      int               `yaml:"unloadTimeout"`
 

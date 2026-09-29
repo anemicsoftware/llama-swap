@@ -1,6 +1,8 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { getHardware } from "../stores/api";
+  import { getHardware, setPowerLimit } from "../stores/api";
+  import { powerLimitOptions } from "../lib/powerLimit";
+  import * as Select from "$lib/components/ui/select/index.js";
   import type { HardwareAccelerator, HardwareSnapshot } from "../lib/types";
   import { formatCapacity } from "../lib/format";
   import { copyText } from "../lib/clipboard";
@@ -22,6 +24,26 @@
       loading = false;
     }
   });
+
+  let powerError = $state<Record<number, string>>({});
+  let powerBusy = $state<Record<number, boolean>>({});
+
+  async function changePowerLimit(accelerator: HardwareAccelerator, watts: number) {
+    const index = accelerator.index;
+    powerBusy[index] = true;
+    powerError[index] = "";
+    try {
+      accelerator.power_limit_watts = await setPowerLimit(index, watts);
+    } catch (cause) {
+      powerError[index] = cause instanceof Error ? cause.message : "Failed to set power limit";
+    } finally {
+      powerBusy[index] = false;
+    }
+  }
+
+  function canSetPower(snapshot: HardwareSnapshot, accelerator: HardwareAccelerator): boolean {
+    return !!snapshot.controls?.power_cap && powerLimitOptions(accelerator).length > 0;
+  }
 
   function shown(value: string | number | null | undefined): string {
     return value === null || value === undefined || value === "" ? "Not detected" : String(value);
@@ -188,7 +210,33 @@
                     <dd>{accelerator.memory.capacity_bytes ? formatCapacity(accelerator.memory.capacity_bytes) : "Not detected"} ({titleCase(accelerator.memory.kind)})</dd>
                     <dt class="text-muted-foreground">Driver</dt><dd>{driverLabel(accelerator)}</dd>
                     <dt class="text-muted-foreground">Power</dt>
-                    <dd>{powerLabel(accelerator)}</dd>
+                    <dd>
+                      {#if canSetPower(hardware, accelerator)}
+                        <Select.Root
+                          type="single"
+                          value={String(Math.round(accelerator.power_limit_watts ?? 0))}
+                          disabled={powerBusy[accelerator.index]}
+                          onValueChange={(value) => value && void changePowerLimit(accelerator, Number(value))}
+                        >
+                          <Select.Trigger
+                            class="h-8 w-32"
+                            aria-label={`Power limit for ${acceleratorTitle(accelerator)}`}
+                          >
+                            {accelerator.power_limit_watts ? `${Math.round(accelerator.power_limit_watts)} W` : "Not detected"}
+                          </Select.Trigger>
+                          <Select.Content>
+                            {#each powerLimitOptions(accelerator) as watts (watts)}
+                              <Select.Item value={String(watts)}>{watts} W</Select.Item>
+                            {/each}
+                          </Select.Content>
+                        </Select.Root>
+                        {#if powerError[accelerator.index]}
+                          <p class="mt-1 text-xs text-destructive">{powerError[accelerator.index]}</p>
+                        {/if}
+                      {:else}
+                        {powerLabel(accelerator)}
+                      {/if}
+                    </dd>
                   </dl>
                 </article>
               {/each}
