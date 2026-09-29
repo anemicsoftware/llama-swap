@@ -37,6 +37,7 @@ type stubRouter struct {
 	unloadModels  []string
 	unloadTimeout time.Duration
 	loggers       map[string]*logmon.Monitor
+	loadInfo      map[string]process.LoadInfo
 }
 
 func newStubRouter(models []string, response string) *stubRouter {
@@ -78,6 +79,10 @@ func (s *stubRouter) ProcessLogger(modelID string) (*logmon.Monitor, bool) {
 		}
 	}
 	return nil, false
+}
+func (s *stubRouter) LoadInfo(modelID string) (process.LoadInfo, bool) {
+	li, ok := s.loadInfo[modelID]
+	return li, ok
 }
 
 // newTestServer wires a Server with stub routers and a built mux.

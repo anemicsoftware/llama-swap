@@ -36,7 +36,9 @@ type apiModel struct {
 	// UptimeMs is how long the model has been ready as of this payload. The
 	// UI counts from it rather than from ReadySince, so a browser clock that
 	// differs from the server's doesn't skew the uptime.
-	UptimeMs int64 `json:"uptimeMs,omitempty"`
+	UptimeMs      int64 `json:"uptimeMs,omitempty"`
+	LoadStartedAt int64 `json:"loadStartedAt,omitempty"` // unix ms; only while state == starting
+	EstLoadMs     int64 `json:"estLoadMs,omitempty"`     // median of prior successful loads; 0 = unknown
 }
 
 type apiProfile struct {
@@ -134,6 +136,16 @@ func (s *Server) modelStatus() []apiModel {
 		// event callbacks that have no request of their own.
 		caps := s.resolveCapabilities(s.shutdownCtx, id, mc)
 		_, capsMap, _, ctxLen := renderCapabilities(caps)
+		// state (from RunningModels above) and li are read separately, so a load
+		// finishing between the two reads can yield state="starting" with
+		// li.StartedAt already 0 for a single snapshot. That is the benign
+		// direction — the UI treats a missing start time as elapsed 0 and the
+		// next snapshot corrects it; the reverse (ready + stale StartedAt) cannot
+		// happen because run() clears StartedAt before it publishes StateReady.
+		var li process.LoadInfo
+		if info, ok := s.local.LoadInfo(id); ok {
+			li = info
+		}
 		models = append(models, apiModel{
 			Id:            id,
 			Name:          mc.Name,
@@ -145,6 +157,8 @@ func (s *Server) modelStatus() []apiModel {
 			ContextLength: ctxLen,
 			ReadySince:    readySince,
 			UptimeMs:      uptimeMs,
+			LoadStartedAt: li.StartedAt,
+			EstLoadMs:     li.EstimateMs,
 		})
 	}
 

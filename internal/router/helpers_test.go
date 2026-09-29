@@ -86,6 +86,10 @@ type fakeProcess struct {
 	// "swap mid-request" anti-property.
 	inFlightServe       atomic.Int32
 	stoppedWhileServing atomic.Bool
+
+	// loadInfo is returned verbatim by LoadInfo(); tests preset it to exercise
+	// the load-timing plumbing.
+	loadInfo process.LoadInfo
 }
 
 func newFakeProcess(id string) *fakeProcess {
@@ -295,6 +299,8 @@ func (f *fakeProcess) WaitReady(ctx context.Context) error {
 }
 
 func (f *fakeProcess) Logger() *logmon.Monitor { return logmon.NewWriter(io.Discard) }
+
+func (f *fakeProcess) LoadInfo() process.LoadInfo { return f.loadInfo }
 
 func (f *fakeProcess) ServeHTTP(w http.ResponseWriter, _ *http.Request) {
 	f.serveCalls.Add(1)

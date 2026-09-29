@@ -39,6 +39,10 @@ export interface Model {
   // client-only: when the model became ready by this browser's clock,
   // derived from uptimeMs on receipt so server clock skew doesn't matter
   readyAt?: number;
+  /** Unix-ms when the current load began; present only while state === "starting". */
+  loadStartedAt?: number;
+  /** Estimated load duration in ms from this model's prior loads; absent when unknown. */
+  estLoadMs?: number;
   // selector-only fields from the v1/models llamaswap metadata
   strategy?: string;
   targets?: string[];

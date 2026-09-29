@@ -29,6 +29,17 @@ type Status struct {
 	ReadySince time.Time
 }
 
+// LoadInfo is a snapshot of a process's load timing, used by the UI to draw an
+// elapsed-vs-estimate progress bar while the process is starting.
+type LoadInfo struct {
+	// StartedAt is the unix-ms timestamp at which the current start began.
+	// Zero when the process is not in StateStarting.
+	StartedAt int64
+	// EstimateMs is the expected load duration derived from this process's
+	// previous successful loads. Zero when there is no history yet.
+	EstimateMs int64
+}
+
 type Process interface {
 	// Run starts the process blocks until the process is terminated.
 	// The timeout parameter controls how long to wait for the process to get
@@ -72,6 +83,10 @@ type Process interface {
 	// Status returns the current state and, while ready, when the process
 	// became ready, read together as one snapshot.
 	Status() Status
+
+	// LoadInfo returns the current load-timing snapshot. Like State it is a
+	// point-in-time read and may change immediately after returning.
+	LoadInfo() LoadInfo
 
 	// ServeHTTP forwards requests to the underlying process
 	// Calling it when the process is not ready will result in a

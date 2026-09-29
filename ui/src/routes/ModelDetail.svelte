@@ -5,6 +5,7 @@
   import type { Model } from "../lib/types";
   import ModelLoadButton from "../components/ModelLoadButton.svelte";
   import CopyableId from "../components/CopyableId.svelte";
+  import LoadProgressBar from "../components/LoadProgressBar.svelte";
   import * as Card from "$lib/components/ui/card/index.js";
   import { Tabs, TabsList, TabsTrigger, TabsContent } from "$lib/components/ui/tabs/index.js";
   import { ExternalLink } from "@lucide/svelte";
@@ -102,6 +103,7 @@
             {/each}
           </div>
         {/if}
+        <LoadProgressBar {model} className="mt-1 max-w-md" />
       </Card.Header>
       <!-- Load status bar; the state text in the header carries it for screen readers. -->
       <div
