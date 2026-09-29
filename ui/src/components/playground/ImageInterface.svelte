@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { get } from "svelte/store";
   import { hasListedModels } from "../../stores/api";
   import { persistentStore } from "../../stores/persistent";
   import { createPlaygroundInterface } from "../../lib/playgroundInterface";
@@ -25,12 +26,23 @@
 
   // SDAPI persistent settings
   const sdNegativePromptStore = persistentStore<string>("playground-sdapi-negative-prompt", "");
-  const sdStepsStore = persistentStore<number>("playground-sdapi-steps", 20);
-  const sdCfgScaleStore = persistentStore<number>("playground-sdapi-cfg-scale", 7);
   const sdSeedStore = persistentStore<number>("playground-sdapi-seed", -1);
   const sdSamplerStore = persistentStore<string>("playground-sdapi-sampler", "");
   const sdSchedulerStore = persistentStore<string>("playground-sdapi-scheduler", "");
   const sdBatchSizeStore = persistentStore<number>("playground-sdapi-batch-size", 1);
+
+  // Steps/cfg-scale are persisted per selected model (not globally): a
+  // distilled/turbo model typically wants far fewer steps and a much lower
+  // cfg-scale than the base model it's derived from, so a single shared
+  // default silently carries the wrong values over when switching models.
+  const SD_DEFAULT_STEPS = 20;
+  const SD_DEFAULT_CFG_SCALE = 7;
+  const sdModelSettingsStore = persistentStore<Record<string, { steps: number; cfgScale: number }>>(
+    "playground-sdapi-model-settings",
+    {}
+  );
+  let sdSteps = $state(SD_DEFAULT_STEPS);
+  let sdCfgScale = $state(SD_DEFAULT_CFG_SCALE);
 
   let prompt = $state("");
   let isGenerating = $derived($busyStore);
@@ -47,6 +59,27 @@
   let loraError = $state<string | null>(null);
 
   let isSdapi = $derived($apiModeStore === "sdapi");
+
+  // Load this model's saved steps/cfg-scale whenever the selection changes.
+  $effect(() => {
+    const model = $selectedModelStore;
+    const saved = model ? get(sdModelSettingsStore)[model] : undefined;
+    sdSteps = saved?.steps ?? SD_DEFAULT_STEPS;
+    sdCfgScale = saved?.cfgScale ?? SD_DEFAULT_CFG_SCALE;
+  });
+
+  // Persist steps/cfg-scale edits under the currently selected model.
+  $effect(() => {
+    const model = $selectedModelStore;
+    const steps = sdSteps;
+    const cfgScale = sdCfgScale;
+    if (!model) return;
+    sdModelSettingsStore.update((all) => {
+      const existing = all[model];
+      if (existing && existing.steps === steps && existing.cfgScale === cfgScale) return all;
+      return { ...all, [model]: { steps, cfgScale } };
+    });
+  });
 
   async function loadLoras() {
     if (!$selectedModelStore || isLoadingLoras) return;
@@ -92,8 +125,8 @@
           negative_prompt: $sdNegativePromptStore || undefined,
           width: w,
           height: h,
-          steps: $sdStepsStore,
-          cfg_scale: $sdCfgScaleStore,
+          steps: sdSteps,
+          cfg_scale: sdCfgScale,
           seed: $sdSeedStore,
           batch_size: $sdBatchSizeStore,
           sampler_name: $sdSamplerStore || undefined,
@@ -236,7 +269,7 @@
           <Input
             type="number"
             class="h-8"
-            bind:value={$sdStepsStore}
+            bind:value={sdSteps}
             min="1"
             max="150"
           />
@@ -246,7 +279,7 @@
           <Input
             type="number"
             class="h-8"
-            bind:value={$sdCfgScaleStore}
+            bind:value={sdCfgScale}
             min="1"
             max="30"
             step="0.5"
