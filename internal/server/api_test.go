@@ -103,6 +103,46 @@ func TestServer_HandleListModels_PeerNamespaces(t *testing.T) {
 	}
 }
 
+func TestServer_HandleListModels_PeerCapabilities(t *testing.T) {
+	s := newTestServer(newStubRouter(nil, ""), newStubRouter(nil, ""))
+	s.cfg = config.Config{
+		Peers: config.PeerDictionaryConfig{
+			"p": {
+				Models: []string{"vision", "plain"},
+				DiscoveredCapabilities: map[string]config.ModelCapConfig{
+					"vision": {In: []string{"text", "image"}, Out: []string{"text"}, Tools: true, Context: 65536},
+				},
+				Capabilities: map[string]config.ModelCapConfig{"plain": {Context: 4096}},
+			},
+		},
+	}
+
+	w := httptest.NewRecorder()
+	s.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/v1/models", nil))
+	var resp struct {
+		Data []modelRecord `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	byID := map[string]modelRecord{}
+	for _, m := range resp.Data {
+		byID[m.ID] = m
+	}
+	if m := byID["p/vision"]; m.ContextLength != 65536 || m.Capabilities["vision"] != true || m.Capabilities["function_calling"] != true {
+		t.Errorf("p/vision = %+v", m)
+	}
+	if m := byID["p/plain"]; m.ContextLength != 4096 {
+		t.Errorf("p/plain context = %d, want 4096", m.ContextLength)
+	}
+
+	for _, m := range s.modelStatus() {
+		if m.Id == "p/vision" && (m.ContextLength != 65536 || m.Capabilities["vision"] != true) {
+			t.Errorf("modelStatus p/vision = %+v", m)
+		}
+	}
+}
+
 func TestServer_HandleListModels_Aliases(t *testing.T) {
 	s := newTestServer(newStubRouter(nil, ""), newStubRouter(nil, ""))
 	s.cfg = config.Config{

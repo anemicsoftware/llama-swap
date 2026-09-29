@@ -537,6 +537,13 @@ func (s *Server) CloseStreams() {
 	s.shutdownFn()
 }
 
+// NoLocalModelsRunning reports whether no local model is loaded or loading.
+// A reload replaces the server and stops its models, so automatic reloads use
+// this to wait for a quiet moment.
+func (s *Server) NoLocalModelsRunning() bool {
+	return len(s.local.RunningModels()) == 0
+}
+
 // Shutdown stops the local and peer routers in parallel. It is idempotent;
 // repeated calls return nil without re-running shutdown.
 //

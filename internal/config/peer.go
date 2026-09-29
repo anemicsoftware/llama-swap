@@ -18,6 +18,16 @@ type PeerConfig struct {
 	Models     []string `yaml:"models"`
 	Filters    Filters  `yaml:"filters"`
 
+	// Discover asks the peer for its model list (GET /v1/models) at startup,
+	// on reload, and periodically, and adds what it reports to Models.
+	Discover bool `yaml:"discover"`
+	// Capabilities sets capabilities per peer model ID. Configured fields
+	// win over discovered ones, field by field, like models.*.capabilities.
+	Capabilities map[string]ModelCapConfig `yaml:"capabilities"`
+	// DiscoveredCapabilities holds what discovery learned per peer model ID.
+	// It is never read from YAML.
+	DiscoveredCapabilities map[string]ModelCapConfig `yaml:"-"`
+
 	// Timeout settings for proxy connections
 	Timeouts TimeoutsConfig `yaml:"timeouts"`
 
@@ -36,6 +46,12 @@ func (c PeerConfig) Tailcat() (key, blob string, privateKey *tailcat.PrivateKey,
 }
 
 type rawPeerConfig PeerConfig
+
+// ModelCapabilities returns the capabilities of a peer model: configured
+// values first, discovered values filling every field left unset.
+func (c PeerConfig) ModelCapabilities(modelID string) ModelCapConfig {
+	return c.Capabilities[modelID].Merge(c.DiscoveredCapabilities[modelID])
+}
 
 // PeerModelFQN returns the fully qualified routing name for a peer model.
 // Peer and model IDs may both contain slashes, so callers must treat the
@@ -202,8 +218,14 @@ func (c *PeerConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	}
 
 	// Validate models is not empty
-	if len(defaults.Models) == 0 {
-		return fmt.Errorf("peer models can not be empty")
+	if len(defaults.Models) == 0 && !defaults.Discover {
+		return fmt.Errorf("peer models can not be empty unless discover is true")
+	}
+
+	for modelID, caps := range defaults.Capabilities {
+		if err := caps.Validate(); err != nil {
+			return fmt.Errorf("capabilities for %q: %w", modelID, err)
+		}
 	}
 
 	*c = PeerConfig(defaults)

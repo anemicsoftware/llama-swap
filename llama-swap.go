@@ -24,6 +24,7 @@ import (
 	"github.com/mostlygeek/llama-swap/internal/event"
 	"github.com/mostlygeek/llama-swap/internal/hw"
 	"github.com/mostlygeek/llama-swap/internal/logmon"
+	"github.com/mostlygeek/llama-swap/internal/peerdiscovery"
 	"github.com/mostlygeek/llama-swap/internal/perf"
 	"github.com/mostlygeek/llama-swap/internal/process"
 	"github.com/mostlygeek/llama-swap/internal/server"
@@ -66,6 +67,9 @@ var logTimeFormats = map[string]string{
 	"stampmicro":  time.StampMicro,
 	"stampnano":   time.StampNano,
 }
+
+// peerDiscoveryInterval is how often peers with discover: true are re-queried.
+const peerDiscoveryInterval = 5 * time.Minute
 
 func configStorePath(cfg config.Config) string {
 	if cfg.Store == nil {
@@ -181,6 +185,11 @@ func main() {
 		os.Exit(1)
 	}
 	proxyLog := logs.ProxyLogs
+
+	// Peers with discover: true are asked for their models here, before
+	// anything reads cfg.Peers, on every reload, and periodically (below).
+	peerDiscovery := peerdiscovery.New(proxyLog)
+	peerDiscovery.Apply(context.Background(), &cfg)
 
 	applyLogSettings := func(cfg config.Config) {
 		level := logmon.LevelInfo
@@ -337,6 +346,7 @@ func main() {
 			proxyLog.Warnf("failed to reload config: %v", err)
 			return
 		}
+		peerDiscovery.Apply(context.Background(), &newCfg)
 
 		newStorePath := configStorePath(newCfg)
 		activeMu.RLock()
@@ -404,6 +414,29 @@ func main() {
 
 	watcherCtx, watcherCancel := context.WithCancel(context.Background())
 	defer watcherCancel()
+
+	// A peer's models and capabilities change without llama-swap's config
+	// changing, so re-check discover peers and reload only when they differ.
+	go func() {
+		ticker := time.NewTicker(peerDiscoveryInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-watcherCtx.Done():
+				return
+			case <-ticker.C:
+				activeMu.RLock()
+				idle := activeSrv.NoLocalModelsRunning()
+				activeMu.RUnlock()
+				// A reload stops running local models, so wait for a quiet
+				// moment; the next tick checks again.
+				if idle && peerDiscovery.Changed(watcherCtx) {
+					proxyLog.Info("peer models changed, reloading configuration")
+					reload()
+				}
+			}
+		}
+	}()
 
 	if *flagWatchConfig {
 		proxyLog.Info("watching configuration for changes (poll-based, 2s interval)")

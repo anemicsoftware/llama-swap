@@ -166,7 +166,13 @@ func (s *Server) modelStatus() []apiModel {
 
 	for peerID, peer := range s.cfg.Peers {
 		for _, modelID := range peer.Models {
-			models = append(models, apiModel{Id: config.PeerModelFQN(peerID, modelID), PeerID: peerID})
+			_, capsMap, _, ctxLen := renderCapabilities(peer.ModelCapabilities(modelID))
+			models = append(models, apiModel{
+				Id:            config.PeerModelFQN(peerID, modelID),
+				PeerID:        peerID,
+				Capabilities:  capsMap,
+				ContextLength: ctxLen,
+			})
 		}
 	}
 

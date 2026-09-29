@@ -345,3 +345,34 @@ peers:
 		t.Fatalf("LoadConfigFromReader error = %v, want peer FQN conflict", err)
 	}
 }
+
+func TestPeerConfig_DiscoverAllowsEmptyModels(t *testing.T) {
+	var peers PeerDictionaryConfig
+	if err := yaml.Unmarshal([]byte("p:\n  proxy: http://x\n  discover: true\n"), &peers); err != nil {
+		t.Fatalf("discover peer without models: %v", err)
+	}
+	if !peers["p"].Discover {
+		t.Error("Discover = false")
+	}
+	if err := yaml.Unmarshal([]byte("p:\n  proxy: http://x\n"), &peers); err == nil {
+		t.Error("peer without models and without discover must be rejected")
+	}
+	err := yaml.Unmarshal([]byte("p:\n  proxy: http://x\n  discover: true\n  capabilities:\n    m:\n      in: [bogus]\n"), &peers)
+	if err == nil {
+		t.Error("invalid capability modality must be rejected")
+	}
+}
+
+func TestPeerConfig_ModelCapabilitiesMergesConfiguredOverDiscovered(t *testing.T) {
+	peer := PeerConfig{
+		Capabilities:           map[string]ModelCapConfig{"m": {Context: 100}},
+		DiscoveredCapabilities: map[string]ModelCapConfig{"m": {Context: 999, In: []string{"text", "image"}}},
+	}
+	got := peer.ModelCapabilities("m")
+	if got.Context != 100 || len(got.In) != 2 {
+		t.Errorf("ModelCapabilities = %+v", got)
+	}
+	if !peer.ModelCapabilities("unknown").Empty() {
+		t.Error("unknown model must have empty capabilities")
+	}
+}

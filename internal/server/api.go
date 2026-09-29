@@ -239,7 +239,7 @@ func (s *Server) handleListModels(w http.ResponseWriter, r *http.Request) {
 				peerID+": "+modelID,
 				"",
 				nil,
-				config.ModelCapConfig{},
+				peer.ModelCapabilities(modelID),
 				"unloaded",
 				map[string]any{"type": "peer", "peerID": peerID},
 			))

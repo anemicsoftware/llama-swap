@@ -811,11 +811,30 @@ peers:
     # - requested path to llama-swap will be appended to the end of the proxy value
     proxy: http://192.168.1.23
     # models: a list of models served by the peer
-    # - required
+    # - required unless discover is true
     models:
       - model_a
       - model_b
       - embeddings/model_c
+    # discover: ask the peer which models it serves
+    # - optional, default: false
+    # - queries GET <proxy>/v1/models at startup, on reload and every 5 minutes
+    # - discovered models are added to models; when the peer's models change
+    #   the configuration reloads once no local model is running
+    # - capabilities (vision, tools, context size) are read from the listing
+    #   when the peer reports them; recent llama-swap peers do
+    # - not supported for tailcat:// peers
+    discover: true
+    # capabilities: set capabilities per peer model for peers that do not
+    # report them
+    # - optional, same fields as models.*.capabilities
+    # - configured fields win over discovered ones
+    capabilities:
+      model_a:
+        in: [text, image]
+        out: [text]
+        tools: true
+        context: 131072
   # Tailcat peers use the case-sensitive connection token as their proxy.
   # Virtual TCP port 80 is fixed and must not be included in the URL.
   tailcat-peer:
