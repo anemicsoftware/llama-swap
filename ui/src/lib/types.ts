@@ -43,6 +43,11 @@ export interface Model {
   loadStartedAt?: number;
   /** Estimated load duration in ms from this model's prior loads; absent when unknown. */
   estLoadMs?: number;
+  // fraction loaded (0 to 1) the upstream last reported through its health
+  // check; only set while starting and the upstream reports progress
+  loadingProgress?: number;
+  // the loading step the upstream last reported; only set while starting
+  loadingMessage?: string;
   // selector-only fields from the v1/models llamaswap metadata
   strategy?: string;
   targets?: string[];

@@ -41,6 +41,13 @@ type apiModel struct {
 	UptimeMs      int64 `json:"uptimeMs,omitempty"`
 	LoadStartedAt int64 `json:"loadStartedAt,omitempty"` // unix ms; only while state == starting
 	EstLoadMs     int64 `json:"estLoadMs,omitempty"`     // median of prior successful loads; 0 = unknown
+	// LoadingProgress is the fraction loaded (0 to 1) the upstream last
+	// reported through its health check. Only set while the model is starting
+	// and its upstream reports progress.
+	LoadingProgress *float64 `json:"loadingProgress,omitempty"`
+	// LoadingMessage is the loading step the upstream last reported. Only set
+	// while the model is starting.
+	LoadingMessage string `json:"loadingMessage,omitempty"`
 }
 
 type apiProfile struct {
@@ -124,12 +131,16 @@ func (s *Server) modelStatus() []apiModel {
 		state := "stopped"
 		var readySince string
 		var uptimeMs int64
+		var loading process.LoadingProgress
 		if st, ok := running[id]; ok {
 			state = string(st.State)
 			if st.State == process.StateReady && !st.ReadySince.IsZero() {
 				readySince = st.ReadySince.UTC().Format(time.RFC3339)
 				// At least 1 so omitempty keeps it for a model that just became ready.
 				uptimeMs = max(1, time.Since(st.ReadySince).Milliseconds())
+			}
+			if st.State == process.StateStarting && st.Loading != nil {
+				loading = *st.Loading
 			}
 		}
 		// Same resolution /v1/models uses, so the dashboard and the OpenAI
@@ -149,18 +160,20 @@ func (s *Server) modelStatus() []apiModel {
 			li = info
 		}
 		models = append(models, apiModel{
-			Id:            id,
-			Name:          mc.Name,
-			Description:   mc.Description,
-			State:         state,
-			Unlisted:      mc.Unlisted,
-			Aliases:       mc.Aliases,
-			Capabilities:  capsMap,
-			ContextLength: ctxLen,
-			ReadySince:    readySince,
-			UptimeMs:      uptimeMs,
-			LoadStartedAt: li.StartedAt,
-			EstLoadMs:     li.EstimateMs,
+			Id:              id,
+			Name:            mc.Name,
+			Description:     mc.Description,
+			State:           state,
+			Unlisted:        mc.Unlisted,
+			Aliases:         mc.Aliases,
+			Capabilities:    capsMap,
+			ContextLength:   ctxLen,
+			ReadySince:      readySince,
+			UptimeMs:        uptimeMs,
+			LoadStartedAt:   li.StartedAt,
+			EstLoadMs:       li.EstimateMs,
+			LoadingProgress: loading.Progress,
+			LoadingMessage:  loading.Message,
 		})
 	}
 
@@ -708,6 +721,7 @@ func (s *Server) handleAPIEvents(w http.ResponseWriter, r *http.Request) {
 
 		unsubscribe := []context.CancelFunc{
 			event.On(func(e swaputil.ProcessStateChangeEvent) { sendModels() }),
+			event.On(func(e swaputil.ProcessLoadingEvent) { sendModels() }),
 			event.On(func(e swaputil.ModelCapabilitiesChangedEvent) { sendModels() }),
 			event.On(func(e swaputil.ConfigFileChangedEvent) { sendModels() }),
 			event.On(func(e swaputil.ProfileChangedEvent) {
